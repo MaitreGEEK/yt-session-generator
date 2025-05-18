@@ -3,8 +3,7 @@ set -e
 
 echo "[yt-session-generator] Preparing to start web server..."
 PORT=${PORT:-3000}
-# Change HOST to the IPv6 all-interfaces address
-HOST="::" 
+HOST="0.0.0.0" # Revert to 0.0.0.0 for broader compatibility
 
 echo "[yt-session-generator] Xvfb dimensions: ${XVFB_WHD:-1280x720x16}"
 echo "[yt-session-generator] Target bind address: $HOST"
