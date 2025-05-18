@@ -1,30 +1,25 @@
 #!/bin/sh
+set -e
 
-echo "[INFO] yt-session-generator (webserver mode): Preparing to start"
+echo "[yt-session-generator] Preparing to start web server..."
 
-XVFB_WHD=${XVFB_WHD:-1280x720x16}
 PORT=${PORT:-3000}
 HOST="0.0.0.0"
 
-echo "[INFO] yt-session-generator (webserver mode): Starting Xvfb on display :99"
-# Run Xvfb in the background and ensure it stays running as long as this script does
-Xvfb :99 -ac -screen 0 "$XVFB_WHD" -nolisten tcp > /dev/null 2>&1 &
+echo "[yt-session-generator] Xvfb dimensions: ${XVFB_WHD:-1280x720x16}"
+echo "[yt-session-generator] Target host: $HOST"
+echo "[yt-session-generator] Target port: $PORT"
+
+echo "[yt-session-generator] Starting Xvfb..."
+Xvfb :99 -ac -screen 0 "${XVFB_WHD:-1280x720x16}" -nolisten tcp > /dev/null 2>&1 &
 XVFBPID=$!
+sleep 3 
 
-# Give Xvfb a moment to initialize
-sleep 3
+echo "[yt-session-generator] Launching Python server: potoken-generator.py --host $HOST --port $PORT"
 
-echo "[INFO] yt-session-generator (webserver mode): Launching potoken-generator.py server, binding to $HOST on port $PORT"
+DISPLAY=:99 python potoken-generator.py --host "$HOST" --port "$PORT"
 
-# Explicitly call the Python interpreter on the script
-# Ensure arguments are passed correctly.
-# The main.py script's run() function uses asyncio.gather which should block.
-# If this command exits, the container will stop.
-DISPLAY=:99 /usr/local/bin/python potoken-generator.py --host "$HOST" --port "$PORT"
-
-# If the script reaches here, it means the python server exited.
-echo "[WARN] yt-session-generator: Python server process ended."
-echo "[INFO] yt-session-generator: Cleaning up Xvfb."
+echo "[yt-session-generator] Python server process ended unexpectedly. Cleaning up Xvfb." # This line should ideally not be reached if the server runs forever
 kill $XVFBPID
 wait $XVFBPID
-echo "[INFO] yt-session-generator: Script finished."
+echo "[yt-session-generator] Startup script finished."
