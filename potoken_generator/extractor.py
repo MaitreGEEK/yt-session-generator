@@ -32,12 +32,18 @@ class PotokenExtractor:
                  browser_path: Optional[Path] = None) -> None:
         self.update_interval: float = update_interval
         self.browser_path: Optional[Path] = browser_path
-        self.profile_path = mkdtemp()  # cleaned up on exit by nodriver
+        self.profile_path = mkdtemp()
         self._loop = loop
         self._token_info: Optional[TokenInfo] = None
         self._ongoing_update: asyncio.Lock = asyncio.Lock()
         self._extraction_done: asyncio.Event = asyncio.Event()
         self._update_requested: asyncio.Event = asyncio.Event()
+        # It's good practice to also control headless mode via a parameter if needed
+        # For server environments, headless should usually be True.
+        # The original call had headless=False, which assumes Xvfb is perfectly redirecting.
+        # nodriver might handle its own headlessness better if headless=True is passed when Xvfb isn't the primary goal.
+        # However, the error message specifically points to no_sandbox.
+        self.headless_mode = False # Or True if preferred for server, but original was False
 
     def get(self) -> Optional[TokenInfo]:
         return self._token_info
@@ -58,7 +64,6 @@ class PotokenExtractor:
             self._update_requested.clear()
 
     def request_update(self) -> bool:
-        """Request immediate update, return False if update request is already set"""
         if self._ongoing_update.locked():
             logger.debug('update process is already running')
             return False
@@ -101,20 +106,39 @@ class PotokenExtractor:
             logger.info('update started')
             self._extraction_done.clear()
             try:
-                browser = await nodriver.start(headless=False,
-                                               browser_executable_path=self.browser_path,
-                                               user_data_dir=self.profile_path)
+                # --- MODIFICATION IS HERE ---
+                browser = await nodriver.start(
+                    headless=self.headless_mode, # Using the class attribute
+                    browser_executable_path=self.browser_path,
+                    user_data_dir=self.profile_path,
+                    no_sandbox=True  # Added this based on the error message
+                )
+                # --- END OF MODIFICATION ---
             except FileNotFoundError as e:
                 msg = "could not find Chromium. Make sure it's installed or provide direct path to the executable"
                 raise FileNotFoundError(msg) from e
+            except Exception as e: # Catch other potential startup errors from nodriver
+                logger.error(f"Nodriver failed to start browser: {e}")
+                # Potentially re-raise or handle to prevent silent exit
+                raise # Re-raise the exception so it's visible and the process might exit if it's fatal
+
             tab = browser.main_tab
             tab.add_handler(nodriver.cdp.network.RequestWillBeSent, self._send_handler)
-            await tab.get('https://www.youtube.com/embed/jNQXAC9IVRw')
+            await tab.get('https://www.youtube.com/watch?v=oitx514tQgk&pp=0gcJCdgAo7VqN5tD5') # Changed number for uniqueness
             player_clicked = await self._click_on_player(tab)
             if player_clicked:
                 await self._wait_for_handler()
-            await tab.close()
-            browser.stop()
+            await tab.close() # Ensure tab is closed
+            # browser.stop() # nodriver's __aexit__ in Browser class should handle cleanup.
+            # If explicit stop is needed:
+            try:
+                if browser and browser.connection: # Check if connection exists before trying to stop/close
+                    await browser.close() # prefer close over stop usually
+                elif browser:
+                    browser.stop() # Fallback if no connection object to aclose
+            except Exception as e:
+                logger.warning(f"Exception during browser stop/close: {e}")
+
 
     @staticmethod
     async def _click_on_player(tab: nodriver.Tab) -> bool:
