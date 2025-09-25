@@ -5,5 +5,5 @@ RUN chmod +x /app/startup-webserver.sh
 
 WORKDIR /app
 # Optional: EXPOSE the port you intend to use internally
-EXPOSE 3000 
+EXPOSE 8080 
 CMD [ "./startup-webserver.sh" ]
